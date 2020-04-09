@@ -1,0 +1,676 @@
+---
+title: "Informalidad y COVID19"
+author: "Daniela de los Santos e Inés Fynn"
+date: "8/4/2020"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    theme: simplex
+  
+---
+
+```{r, warning=F, message=F, error=F, comment=FALSE}
+library(tidyverse)
+library(survey)
+library(knitr)
+library(kableExtra)
+library(ggthemes)
+library(RColorBrewer)
+library(ggridges)
+ech19<-readRDS(file="ech19.rds")
+
+```
+
+
+# Ficha metodológica
+
+Los datos presentados en la columna “COVID-19: Los límites a la informalidad en tiempos de distancia social” fueron procesados a partir de la Encuesta Continua de Hogares 2019 del [INE-Uruguay](http://www3.ine.gub.uy/encuesta-continua-de-hogares1). Para la medida de posibilidad de trabajo en contexto de distancia social se utilizaron los datos de la Red de Información Ocupacional desarrollada por el Departamento de Empleo de los Estados Unidos [ONET](https://www.onetcenter.org/). Estos datos aportan descripciones de más de mil ocupaciones. Con estos insumos construimos una nueva base de datos compatibilizando las ocupaciones de la ECH con los datos de ONET a través el sistema de clasificación de ocupaciones SOC 2010.
+
+La metodología de compatibilización de los datos ocupacionales SOC 2010 - CIUO 08 tiene algunas particularidades ya observadas en [este paper](http://documents.worldbank.org/curated/en/940501496692186828/pdf/115685-NWP-SPANISH-P161571-ApellaZuninoCambiotecnologico.pdf) de Apella y Zunino. Seguimos su metodología, imputando los valores promediados de las variables ONET a las categorías CIUO a las que corresponde más de una categoría SOC 2010. 
+
+Para medir la posibilidad de trabajo en distancia social construimos un índice a partir de un promedio simple de dos dimensiones: necesidad de proximidad física para realizar el trabajo (nombre de variable en la base: ´pp´) y posibilidad de trabajar a distancia (a partir de dos variables que caracterizan las ocupaciones: nivel de independencia (´ind´) y frecuencia de uso del correo electrónico (´em´)). Este índice es estandarizado, de forma que el valor de 0 equivale a ocupaciones que no son posibles de ser desarrolladas en confinamiento, mientras que 1 son ocupaciones que pueden desarrollarse en ese contexto.
+Para la construcción de la tipología, tomamos como punto de corte la media de la distribución del índice. Así, valores menores a 0.51 en el índice fueron codificados como “no puede trabajar a distancia”, y los valores mayores como “sí puede trabajar a distancia”. La variable de informalidad según criterio legalista es operacionalizada a partir de la variable de aporte a caja de jubilaciones de la ECH (´f82´). El cruce de estas dos variables arroja la tipología utilizada en la columna. 
+
+Los cruces que se muestran a continuación alimentan el análisis realizado en la columna, y ofrecen algo más de información que permite caracterizar la tipología presentada. Además, dejamos disponible la tabla con el valor de cada variable de ONET asociado a la CIUO y código en nuestro repositorio de [github](https://github.com/danidlsa/COVID-informalidad-teletrabajo) 
+
+
+
+Utilizamos base de ECH 2019 filtrada - solo trabajadores.
+
+# Informalidad
+
+## **Criterio legalista** 
+Cumplimiento de legislación laboral vigente: informal como todo aquel que no está cubierto por la seguridad social. 
+Constituyen el **24,8%** de los trabajadores.
+
+```{r}
+ech19 <-ech19 %>% mutate(informal_leg=case_when(f82==1~0,
+                                           f82==2~1))
+d_ocup_19 <- svydesign(id=~numero, weights=~pesoano, data=ech19)
+svymean(~informal_leg, design=d_ocup_19)
+```
+
+## **Criterio productivo**
+Trabajadores informales serán: 
+(1) cuentapropistas con y sin local (salvo profesionales y técnicos), 
+(2) familiares no remunerados, 
+(3) empleados privados en empresas de menos de 5 empleados
+(4) Servicio doméstico 
+(5) Miembros de cooperativas de producción de empresas de menos de 5 empleados
+(6) Patrones de microempresas (empresas de menos de 5 empleados).
+
+Representan el **36,8%** de los trabajadores.
+
+_Servicio doméstico_
+
+Las categorías de trabajo doméstico fueron definidas de acuerdo al CIUO 88, con los códigos 5131 (cuidadores de niños), 5133 y 5142 (cuidadores de enfermos) y 9131 (tareas doméstica) para la definición de las tareas que realiza; y, de acuerdo al CIIU Rev. 4, con el código 9700 (actividades de los hogares en calidad de empleadores de servicio doméstico).
+FUENTE: [Gallo y Santos (2015)](https://www.bps.gub.uy/bps/file/10147/1/trabajo-domestico-remunerado-en-uruguay.-regulacion-resultados-y-situacion-actual.-a.gallo-y-s.-santos.pdf)
+
+```{r}
+ech19 <-ech19 %>% mutate(trabajo_dom_ciiu=ifelse(f72_2==9700, 1, 0),
+                                         trabajo_dom_ciuo=ifelse(f71_2==5311 | 
+                                                                   f71_2==5322 | 
+                                                                   f71_2==5162 |
+                                                                   f71_2==9111,
+                                                                 1, 0),
+                                         servdom=ifelse(trabajo_dom_ciiu==1 &
+                                                          trabajo_dom_ciuo==1,
+                                                        1, 0))
+ech19 <-ech19 %>% mutate(proftec=case_when(f71_2>=2000 & f71_2<=4000~1,
+                                           TRUE~0))
+
+ech19 <-ech19 %>% mutate(informal_prodc=case_when(proftec==0 & (f73==5 | f73==6)~1,
+                                                  f73==7~2,
+                                                  (f73==1 | f73==2) & (f77==1 | f77==2)~3,
+                                                  servdom==1~4,
+                                                  f73==3 & (f77==1 | f77==2)~5,
+                                                  f73==4 & (f77==1 | f77==2)~6,
+                                                  TRUE~0))
+
+ech19 <-ech19 %>% mutate(informal_prod=case_when(informal_prodc>=1~1,
+                                                                 TRUE~0))
+ech19$informal_prodc <- factor(ech19$informal_prodc,
+levels = c(1,2,3,4,5,6),
+labels = c("Cuenta propia (sin profesionales ni técnicos)", "Miembro de hogar no remunerado", "Asalariados en empresas de menos de 5 trabajadores","Servicio doméstico","Miembros de cooperativa de producción o trabajo", "Patrón de Microempresa"))
+
+#ech19 %>% janitor::tabyl(informal_prod)
+#mean(ech19$informal_prod, na.rm=TRUE)
+
+d_ocup_19 <- svydesign(id=~numero, weights=~pesoano, data=ech19)
+svymean(~informal_prod, design=d_ocup_19) 
+svytable(~informal_prodc, design=d_ocup_19, Ntotal=100) %>% kable(col.names=c("Categoría", "Porcentaje")) %>%
+  kable_styling()
+
+
+```
+
+
+
+## Superposición de las dos mediciones
+
+"Vulnerables" (entran en ambos criterios): Son el *21%* de los trabajadores.
+
+```{r}
+ech19 <- ech19 %>% mutate(vulnerables=ifelse(informal_leg==1 & informal_prod==1, 1, 0)
+                                            )
+d_ocup_19 <- svydesign(id=~numero, weights=~pesoano, data=ech19)
+svytable(~vulnerables, design=d_ocup_19, Ntotal=100)
+```
+
+
+## Caracterización de la informalidad en Uruguay (según criterio legalista)
+
+### **Género**
+
+Informalidad según género
+```{r}
+
+ech19$gen <- ifelse(ech19$e26==1, "Hombres", "Mujeres")
+ech19$informal_leg_chr <- ifelse(ech19$informal_leg==1, "Informal", "Formal")
+
+d_ocup_19 <- svydesign(id=~numero, weights=~pesoano, data=ech19)
+
+prop.table(svytable(~informal_leg_chr+gen, design=d_ocup_19, Ntotal=100), margin=2) %>% kable() %>%
+  kable_styling()
+
+
+```
+
+
+Vulnerabilidad según género
+```{r}
+ech19$vulnerables_chr <- ifelse(ech19$vulnerables==1, "Vulnerable", "No vulnerable")
+
+d_ocup_19 <- svydesign(id=~numero, weights=~pesoano, data=ech19)
+
+prop.table(svytable(~vulnerables_chr+gen, design=d_ocup_19, Ntotal=100), margin=2) %>% kable() %>%
+  kable_styling()
+```
+
+
+### **Edad**
+
+```{r}
+ech19 <- ech19 %>% mutate(edad=case_when(e27<18~1,
+                                         e27>=18 & e27<=30~2,
+                                         e27>30 & e27<=45~3,
+                                         e27>45 & e27<65~4,
+                                         e27>64~5))
+
+
+ech19$edad <- factor(ech19$edad,
+levels = c(1,2,3,4,5),
+labels = c("De 14 a 17 años", "De 18 a 30 años", "De 31 a 45 años","De 46 a 64 años","65 años y más"))
+
+
+ech19 <- ech19 %>% mutate(edad2=case_when(e27<18~1,
+                                         e27>=18 & e27<=30~2,
+                                         e27>30 & e27<=45~3,
+                                         e27>45 & e27<60~4,
+                                         e27>=60 & e27<65~5,
+                                         e27>64~6))
+
+
+ech19$edad2 <- factor(ech19$edad2,
+levels = c(1,2,3,4,5,6),
+labels = c("De 14 a 17 años", "De 18 a 30 años", "De 31 a 45 años","De 46 a 59 años","De 60 a 64 años", "65 años y más"))
+```
+
+Informalidad según edad
+```{r}
+d_ <- svydesign(id=~numero, weights=~pesoano, data=ech19)
+prop.table(svytable(~informal_leg_chr+edad, design=d_, Ntotal=100), margin=2) %>%
+  kable() %>%
+  kable_styling()
+
+
+```
+
+Vulnerabilidad según edad
+```{r}
+d_ <- svydesign(id=~numero, weights=~pesoano, data=ech19)
+prop.table(svytable(~vulnerables_chr+edad, design=d_, Ntotal=100), margin=2) %>%
+  kable() %>%
+  kable_styling()
+
+
+```
+
+
+### **Territorio**
+
+Informalidad según región (Montevideo, Interior Urbano + 5000, Interior - 5000 y Rural)
+
+```{r}
+ech19$region <- factor(ech19$region_3,
+levels = c("1","2","3"),
+labels = c("Montevideo", "Interior (localidades + 5000 hab)", "Interior (localidades - 5000 hab) y Rural"))
+
+
+t <- aggregate(pesoano~informal_leg_chr+region, ech19, sum)
+tt <- aggregate(pesoano~region, t, sum)
+t <- t %>% left_join(tt, by="region") %>%
+  mutate(porcentaje=pesoano.x/pesoano.y*100) 
+t <- t %>% mutate(region=ifelse(region=="Montevideo", "Montevideo",
+                                ifelse(grepl("Rural", region)==T, "Int. -5000 hab.",
+                                       "Int. +5000 hab.")))
+
+ggplot(t, aes(x=region, y=porcentaje, fill=informal_leg_chr, label=round(porcentaje))) +
+  geom_bar(stat="identity", position="stack") +
+  scale_fill_brewer(name="", palette="Set2") +
+  theme_minimal() +
+  labs(x="Región", y="%", title="Informalidad según región",
+       subtitle="Año 2019",
+       caption="Fuente: elaboración propia en base a ECH 2019") +
+  geom_text (position=position_stack(vjust=0.5), 
+                       size=4) +
+  theme(axis.title=element_text(face="bold"),
+        axis.title.y=element_text(angle=0))
+
+```
+
+
+# Índice de Trabajo a Distancia
+
+Cargamos previamente en la ECH con la que trabajamos los valores de tres variables de O*NET (a través de la compatibilización SOC-CIUO) (Ver ficha metodológica)
+
+
+```{r}
+rescale01 <- function(x) {
+  rng <- range(x, na.rm = TRUE)
+  (x - rng[1]) / (rng[2] - rng[1])
+}
+
+ech19 <- ech19 %>%
+  mutate(pp = rescale01(pp_mean.x),
+         em = rescale01(em_mean.x), 
+         ind = rescale01(ind_mean.x))
+
+ech19$pp <-1-ech19$pp #Invertimos la escala de proximidad física, para que sume al índice cuando la proximidad no es necesaria.
+
+ech19$tele<-(ech19$ind + ech19$em)/2
+ech19 <- ech19 %>%
+  mutate(tele = rescale01(tele))
+
+ech19$IPS_2<- (ech19$pp + ech19$tele )/2
+
+summary(ech19$IPS_2)
+
+```
+
+Exploración: qué puntúa cada ocupación
+```{r}
+
+k <- ech19 %>%
+  group_by(haven::as_factor(ech19$f71_2)) %>%
+  summarise(mean_IPS2=mean(IPS_2)) 
+
+
+k <- k[order(k$mean_IPS2),]
+k <- k %>% 
+  knitr::kable(col.names=c("Ocupación", "IPS2")) %>%
+  kableExtra::kable_styling(fixed_thead = T, full_width = F) %>%
+  scroll_box(width = "100%", height = "200px")
+k
+```
+
+# Tipología: informalidad y trabajo a distancia
+ (punto de corte para el Índice: media de IPS_2=0.505~0.51 )
+ 
+### Números absolutos
+```{r}
+ech19 <-ech19 %>% mutate(tipologia=case_when(IPS_2>0.51 & informal_leg==0~4,
+                                        IPS_2>0.51 & informal_leg==1~2,
+                                        IPS_2<=0.51 & informal_leg==0~3,
+                                        IPS_2<=0.51 & informal_leg==1~1))
+
+
+ech19$tipologia <- factor(ech19$tipologia,
+levels = c(1,2,3,4),
+labels = c("Informal, no puede teletrab.", "Informal, puede teletrab.", "Formal, no puede teletrab.","Formal, puede teletrab."))
+d_ <- svydesign(id=~numero, weights=~pesoano, data=ech19)
+svytable(~tipologia, design=d_) %>% 
+  kable(col.names = c("Categoría", "n")) %>% 
+  kable_styling()
+```
+
+### Distribución de los trabajadores
+
+```{r}
+
+svytable(~tipologia, design=d_, Ntotal=100) %>% 
+  kable(col.names = c("Categoría", "Porcentaje")) %>% 
+  kable_styling()
+```
+
+```{r}
+c1 <- c("Informal, no puede teletrabajar", "Informal, puede teletrabajar", "Formal, no puede teletrabajar", "Formal, puede teletrabajar")
+c2 <- c(17, 8, 36, 39)
+names(c2) <- c1 
+library(waffle)
+
+w <- waffle((c2), rows=10, size=.5, title="Tipología: informalidad y trabajo a distancia") +
+    scale_fill_brewer(name="", palette="Set2") +
+  labs(caption="Cada unidad equivale a 490 trabajadores") +
+  theme(legend.text=element_text(size=11),
+        plot.title=element_text(size=13, face="bold"))
+w
+
+ggsave("waffle.png", w, height=12, width=15, units="cm")
+```
+
+```{r}
+
+ech19 <-ech19 %>% mutate(IPS_2_dico=case_when(IPS_2>0.51~1,
+                                        IPS_2<=0.51~0))
+
+ech19$IPS_2_dico <- factor(ech19$IPS_2_dico,
+levels = c(0,1),
+labels = c("No trabaja a distancia", "Trabaja distancia"))
+
+ech19 <-ech19 %>% mutate(IPS_2_dico_chr=case_when(IPS_2>0.51~"Trabaja a distancia",
+                                        IPS_2<=0.51~"No trabaja a distancia"))
+
+t <- aggregate(pesoano~informal_leg_chr+IPS_2_dico_chr, ech19, sum)
+tt <- aggregate(pesoano~informal_leg_chr, t, sum)
+t <- t %>% left_join(tt, by="informal_leg_chr") %>%
+  mutate(porcentaje=pesoano.x/pesoano.y*100) 
+
+ggplot(t, aes(x=informal_leg_chr, y=porcentaje, fill=IPS_2_dico_chr, label=round(porcentaje))) +
+  geom_bar(stat="identity", position="stack") +
+  scale_fill_brewer(name="", palette="Set2") +
+  theme_minimal() +
+  labs(x="Condición de formalidad", y="%", title="Trabajo a distancia según condición de formalidad",
+       subtitle="Año 2019",
+       caption="Fuente: elaboración propia en base a ECH 2019") +
+  geom_text (position=position_stack(vjust=0.5), 
+                       size=4) +
+  theme(axis.title=element_text(face="bold"),
+        axis.title.y=element_text(angle=0),
+        axis.text.x=element_text(size=11),
+        plot.title=element_text(size=12, face="bold"))
+
+ggsave("trabajo x form.png", height=11, width = 15, units="cm")
+```
+
+
+Explorando categoría de informales que pueden trabajar con distancia social 
+```{r}
+p <-ech19 %>% filter(tipologia=="Informal, puede teletrab.") %>%
+  mutate(count=1)
+
+k <- p %>%
+  group_by(haven::as_factor(f71_2)) %>%
+  summarise(mean_IPS2=mean(IPS_2),
+            casos_ECH=sum(count)) 
+k <- k[order(k$mean_IPS2),]
+
+k <- k %>% 
+  kable(col.names=c("Ocupación", "Índice trabajo a distancia", "Casos sin ponderar")) %>%
+  kable_styling(fixed_thead = T) %>%
+  scroll_box(width = "100%", height = "200px")
+k
+```
+
+
+# Caracterización de Índice y Tipología
+
+## **Índice**
+
+Distribución del Índice entre vulnerables
+```{r, warning=F}
+
+ech19 %>% ggplot() +
+  geom_density_ridges(aes(x=IPS_2, 
+                          y=vulnerables_chr,
+                          fill=vulnerables_chr,
+                          height=..density.., 
+                          weight=pesoano),     
+                      stat="density", alpha=.6) +
+  scale_fill_brewer(palette="Set2", name="Vulnerables \n(informales leg + prod)") +
+  theme_minimal() +
+  labs(title="Vulnerables",
+       x="Índice de trabajo a distancia",
+       y="") +
+  theme(legend.position="")
+
+```
+
+
+## **Tipología**
+
+## *Variables persona*
+
+### - Género
+
+```{r}
+d_ocup_19 <- svydesign(id=~numero, weights=~pesoano, data=ech19)
+prop.table(svytable(~tipologia+gen, design=d_ocup_19, Ntotal=100), margin=2) %>%
+  kable() %>% kable_styling()
+```
+
+### - Edad
+
+```{r}
+
+t <- aggregate(pesoano~tipologia+edad2, ech19, sum)
+tt <- aggregate(pesoano~edad2, t, sum)
+t <- t %>% left_join(tt, by="edad2") %>%
+  mutate(porcentaje=pesoano.x/pesoano.y*100) 
+
+ggplot(t, aes(x=edad2, y=porcentaje, fill=tipologia, label=round(porcentaje))) +
+  coord_flip() +
+  geom_bar(stat="identity", position="stack") +
+  scale_fill_brewer(name="", palette="Set2") +
+  theme_minimal() +
+  labs(x="Edad", y="%", title="Informalidad y trabajo a distancia según edad",
+       subtitle="Año 2019",
+       caption="Fuente: elaboración propia en base a ECH 2019") +
+  geom_text (position=position_stack(vjust=0.5), 
+                       size=3) +
+  theme(axis.title=element_text(face="bold"),
+        axis.title.y=element_text(angle=0),
+        axis.text.x=element_text(size=11),
+        plot.title=element_text(size=12, face="bold"))
+
+
+```
+
+
+
+### - Territorio
+
+Tipología en regiones:
+
+```{r}
+
+t <- aggregate(pesoano~tipologia+region, ech19, sum)
+tt <- aggregate(pesoano~region, t, sum)
+t <- t %>% left_join(tt, by="region") %>%
+  mutate(porcentaje=pesoano.x/pesoano.y*100) 
+t <- t %>% mutate(region=ifelse(region=="Montevideo", "Montevideo",
+                                ifelse(grepl("Rural", region)==T, "Int. -5000 hab.",
+                                       "Int. +5000 hab.")))
+
+ggplot(t, aes(x=region, y=porcentaje, fill=tipologia, label=round(porcentaje))) +
+  geom_bar(stat="identity", position="stack") +
+  scale_fill_brewer(name="", palette="Set2") +
+  theme_minimal() +
+  labs(x="Región", y="%", title="Informalidad y trabajo a distancia según región",
+       subtitle="Año 2019",
+       caption="Fuente: elaboración propia en base a ECH 2019") +
+  geom_text (position=position_stack(vjust=0.5), 
+                       size=3) +
+  theme(axis.title=element_text(face="bold"),
+        axis.title.y=element_text(angle=0))
+```
+
+### - Ingresos laborales
+
+
+```{r}
+ech19 <- ech19 %>% 
+  mutate(ipc=case_when(
+    mes==1	~	0.93916855	,
+  mes==2	~	0.94833021	,
+  mes==3	~	0.95355137	,
+  mes==4	~	0.95763964	,
+  mes==5	~	0.96143237	,
+  mes==6	~	0.96758940	,
+  mes==7	~	0.97497783	,
+  mes==8	~	0.98359768	,
+  mes==9	~	0.98867107	,
+  mes==10	~	0.99610876	,
+  mes==11	~	1.00029554	,
+  mes==12	~	1.00000000	))
+  
+
+
+ech19 <- ech19 %>% mutate(pt2_deflac=PT2/ipc) 
+ech19 <- ech19 %>% mutate(ingh=pt2_deflac/4.3/f85)
+
+#install.packages("dineq")
+library(dineq)
+ech19$quintiles_laboral <- ntiles.wtd(ech19$ingh, n=5, weights=ech19$pesoano)
+
+
+```
+
+
+**Ingresos por hora**
+```{r, warning=F}
+
+ech19 %>% 
+  filter(is.na(tipologia)==F) %>%
+  ggplot() +
+  geom_density_ridges(aes(x=log(ingh), 
+                          y=as.factor(tipologia),
+                          fill=as.factor(tipologia),
+                          height=..density.., 
+                          weight=pesoano),     
+                      stat="density", alpha=.6) +
+  scale_fill_brewer(palette="Set2", name="") +
+  theme_minimal() +
+  labs(title="Ingresos según informalidad y trabajo a distancia",
+       x="Ingresos por hora (log)",
+       y="",
+       caption="Elaboración propia en base a ECH 2019")
+
+```
+
+Promedio por tipología
+```{r}
+ingh <- ech19%>% 
+  group_by(tipologia) %>%
+  summarise_at(vars(ingh), funs(mean(.,na.rm=TRUE)))
+ingh %>% kable()
+```
+
+
+**Ingresos mensuales**
+```{r, warning=F}
+
+ech19 %>%
+  filter(is.na(tipologia)==F) %>%
+  ggplot() +
+  geom_density_ridges(aes(x=log(pt2_deflac), 
+                          y=as.factor(tipologia),
+                          fill=as.factor(tipologia),
+                          height=..density.., 
+                          weight=pesoano),     
+                      stat="density", alpha=.6) +
+  scale_fill_brewer(palette="Set2", name="") +
+  theme_minimal() +
+  labs(title="Ingresos según informalidad y trabajo a distancia",
+       x="Ingresos mensuales (log)",
+       y="",
+       caption="Elaboración propia en base a ECH 2019")
+```
+
+
+Promedio por tipología (ingresos mensuales)
+```{r}
+pt <- ech19%>% 
+  group_by(tipologia) %>%
+  summarise_at(vars(pt2_deflac), funs(mean(.,na.rm=TRUE)))
+pt %>% kable()
+```
+
+## *Variables hogar*
+
+### - Hacinamiento
+Tasa de hacinamiento
+```{r}
+
+ech19$hacina <- ifelse(ech19$ht19/ech19$d10>2, 1, 0)
+
+hacinamiento <- ech19%>% 
+  filter(is.na(tipologia)==F) %>%
+  group_by(tipologia) %>%
+  summarise_at(vars(hacina), funs(mean(.,na.rm=TRUE))) %>%
+  kable(col.names=c("Tipología", "Hacinamiento (0-1)")) %>%
+  kable_styling() 
+
+hacinamiento
+```
+
+
+### - Acceso a internet y computadora
+
+- Acceso a internet en el hogar 
+```{r}
+ech19 <-ech19 %>% mutate(internet=case_when(d21_16==1~1,
+                                           d21_16==2~0))
+
+ech19$internet <- factor(ech19$internet,
+levels = c(0,1),
+labels = c("Vivienda sin conexión a internet", "Vivienda con conexión a internet"))
+
+d_ocup_19 <- svydesign(id=~numero, weights=~pesoano, data=ech19)
+prop.table(svytable(~internet+tipologia, design=d_ocup_19, Ntotal=100), margin=2) %>%
+  kable() %>% kable_styling()
+```
+
+
+- Tiene "microcomputador" (laptop, notebook, tablet, etc)
+```{r}
+ech19 <-ech19 %>% mutate(compu=case_when(d21_15==1~1,
+                                           d21_15==2~0))
+
+ech19$compu <- factor(ech19$compu,
+levels = c(0,1),
+labels = c("No tiene computadora", "Tiene computadora"))
+
+d_ocup_19 <- svydesign(id=~numero, weights=~pesoano, data=ech19)
+prop.table(svytable(~compu+tipologia, design=d_ocup_19, Ntotal=100), margin=2) %>%
+  kable() %>% kable_styling()
+```
+
+
+### NBI: vivienda decorosa
+
+```{r}
+
+ech19 <- ech19 %>% 
+  mutate(materialidad=
+           ifelse(c2==6 | c3==6 | c4==5, 1, 0),
+         espacio_habitable=hacina,
+         espacio_cocinar=ifelse(d19==3, 1, 0),
+         nbi_vivienda_decorosa=materialidad+espacio_habitable+espacio_cocinar,
+         nbi_vivienda_decorosa=ifelse(nbi_vivienda_decorosa>0, "Al menos una NBI vivienda", "Ninguna NBI vivienda"))
+
+d_ocup_19 <- svydesign(id=~numero, weights=~pesoano, data=ech19)
+prop.table(svytable(~nbi_vivienda_decorosa+tipologia, design=d_ocup_19, Ntotal=100), margin=2) %>% kable() %>% kable_styling()
+
+```
+
+### Menores en el hogar 
+- **Total ocupados**
+
+```{r}
+ech <- haven::read_sav("HyP_2019_Terceros.sav")
+
+ech <- ech %>% mutate(m12= ifelse(e27<12, 1, 0),
+                      m18=ifelse(e27<18, 1, 0))
+
+tt <- aggregate(m12~numero, ech, sum) %>% 
+  mutate(numero=as.numeric(numero))
+
+tt2 <- aggregate(m18~numero, ech, sum)%>% 
+  mutate(numero=as.numeric(numero))
+
+
+ech19 <- ech19 %>% left_join(tt, by="numero") %>% left_join(tt2, by="numero")
+
+ech19 <- ech19 %>% 
+  mutate(m12_recat= ifelse(m12==0, 0,
+                           ifelse(m12==1, 1,
+                                  ifelse(m12>1, 2, NA))))
+  
+
+ech19$m12_recat <- factor(ech19$m12_recat,
+levels = c(0,1,2),
+labels = c("Ninguno", "Uno", "Más de uno"))
+d_ocup_19 <- svydesign(id=~numero, weights=~pesoano, data=ech19)
+
+
+prop.table(svytable(~m12_recat+tipologia, design=d_ocup_19, Ntotal=100), margin=2) %>% 
+  knitr::kable() %>% kable_styling()
+```
+
+- **Mujeres ocupadas**
+
+```{r}
+
+dm <- svydesign(id=~numero, weights=~pesoano, data=subset(ech19, e26==2))
+prop.table(svytable(~m12_recat+tipologia, design=dm, Ntotal=100), margin=2) %>% 
+  knitr::kable() %>% kable_styling()
+
+```
+
+# Contactos
+
+Inés Fynn - [ifynn@uc.cl](mailto:ifynn@uc.cl)
+Daniela de los Santos - [dlsantos.daniela@gmail.com](mailto:dlsantos.daniela@gmail.com)
