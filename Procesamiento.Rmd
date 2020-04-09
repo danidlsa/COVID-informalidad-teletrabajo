@@ -36,7 +36,6 @@ Para la construcción de la tipología, tomamos como punto de corte la media de 
 Los cruces que se muestran a continuación alimentan el análisis realizado en la columna, y ofrecen algo más de información que permite caracterizar la tipología presentada. Además, dejamos disponible la tabla con el valor de cada variable de ONET asociado a la CIUO y código en nuestro repositorio de [github](https://github.com/danidlsa/COVID-informalidad-teletrabajo) 
 
 
-
 Utilizamos base de ECH 2019 filtrada - solo trabajadores.
 
 # Informalidad
